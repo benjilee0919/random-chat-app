@@ -1,4 +1,4 @@
-<<<<<<< HEAD
+
 # Random Chat App
 
 A simple random chat application built with Flask and Flask-SocketIO.
