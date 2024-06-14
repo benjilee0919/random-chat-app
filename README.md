@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # Random Chat App
 
 A simple random chat application built with Flask and Flask-SocketIO.
@@ -15,3 +16,4 @@ A simple random chat application built with Flask and Flask-SocketIO.
    ```sh
    git clone https://github.com/your-username/random-chat-app.git
    cd random-chat-app
+=======
