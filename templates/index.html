@@ -8,13 +8,15 @@
 </head>
 <body>
     <h1>Welcome to Random Chat App</h1>
-    <div id="chat">
-        <!-- Chat messages will go here -->
+    <div id="chat-container">
+        <div id="chat-box">
+            <!-- Chat messages will go here -->
+        </div>
+        <form id="chat-form">
+            <input type="text" id="message" placeholder="Type a message..." autocomplete="off">
+            <button type="submit">Send</button>
+        </form>
     </div>
-    <form id="chat-form">
-        <input type="text" id="message" placeholder="Type a message..." autocomplete="off">
-        <button type="submit">Send</button>
-    </form>
     <script src="https://cdn.socket.io/4.0.0/socket.io.min.js"></script>
     <script src="{{ url_for('static', filename='chat.js') }}"></script>
 </body>
