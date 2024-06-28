@@ -65,61 +65,18 @@ button:hover {
     background-color: #0056b3;
 }
 
-body {
-    font-family: Arial, sans-serif;
-    margin: 0;
-    padding: 0;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100vh;
-    background-color: #f4f4f4;
-}
-
-h1, h2 {
-    text-align: center;
-    margin-bottom: 20px;
-}
-
-form {
-    display: flex;
-    flex-direction: column;
-    width: 300px;
-    padding: 20px;
-    border: 1px solid #ccc;
-    border-radius: 5px;
-    background-color: #fff;
-    box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
-}
-
-form div {
-    margin-bottom: 15px;
-}
-
-label {
-    margin-bottom: 5px;
-}
-
-input {
-    padding: 10px;
-    border: 1px solid #ccc;
+.chat-message {
+    padding: 5px 10px;
+    margin: 5px 0;
     border-radius: 5px;
 }
 
-button {
-    padding: 10px;
-    border: none;
-    border-radius: 5px;
-    background-color: #007bff;
-    color: #fff;
-    cursor: pointer;
-    outline: none;
+.me {
+    color: red;
+    text-align: left;
 }
 
-button:hover {
-    background-color: #0056b3;
-}
-
-p {
-    text-align: center;
+.other {
+    color: blue;
+    text-align: left;
 }

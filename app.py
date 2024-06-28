@@ -1,10 +1,8 @@
-from flask import Flask, render_template, redirect, url_for, flash, session, request
-from flask_socketio import SocketIO, send
+from flask import Flask, render_template, request
+from flask_socketio import SocketIO, send, emit, join_room, leave_room
 from flask_sqlalchemy import SQLAlchemy
-from flask_wtf import FlaskForm
-from wtforms import StringField, PasswordField, SubmitField
-from wtforms.validators import InputRequired, Length, ValidationError
-from werkzeug.security import generate_password_hash, check_password_hash
+from datetime import datetime
+from collections import deque
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
@@ -14,73 +12,82 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 socketio = SocketIO(app)
 
-class User(db.Model):
-    id = db.Column(db.Integer, primary_key=True)
-    username = db.Column(db.String(50), unique=True, nullable=False)
-    password = db.Column(db.String(80), nullable=False)
+# Queue to manage users waiting to be paired
+waiting_queue = deque()
+user_rooms = {}  # Map user IDs to their rooms
 
 class Message(db.Model):
     id = db.Column(db.Integer, primary_key=True)
+    nickname = db.Column(db.String(50), nullable=False)
     content = db.Column(db.String(200), nullable=False)
-    user_id = db.Column(db.Integer, db.ForeignKey('user.id'), nullable=False)
-
-class RegisterForm(FlaskForm):
-    username = StringField(validators=[InputRequired(), Length(min=4, max=20)], render_kw={"placeholder": "Username"})
-    password = PasswordField(validators=[InputRequired(), Length(min=4, max=20)], render_kw={"placeholder": "Password"})
-    submit = SubmitField("Register")
-
-    def validate_username(self, username):
-        existing_user = User.query.filter_by(username=username.data).first()
-        if existing_user:
-            raise ValidationError("That username already exists. Please choose a different one.")
-
-class LoginForm(FlaskForm):
-    username = StringField(validators=[InputRequired(), Length(min=4, max=20)], render_kw={"placeholder": "Username"})
-    password = PasswordField(validators=[InputRequired(), Length(min=4, max=20)], render_kw={"placeholder": "Password"})
-    submit = SubmitField("Login")
+    timestamp = db.Column(db.DateTime, default=datetime.utcnow, nullable=False)
+    room = db.Column(db.String(50), nullable=False)
 
 @app.route('/')
 def index():
-    if "user_id" not in session:
-        return redirect(url_for("login"))
     return render_template('index.html')
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    form = LoginForm()
-    if form.validate_on_submit():
-        user = User.query.filter_by(username=form.username.data).first()
-        if user and check_password_hash(user.password, form.password.data):
-            session["user_id"] = user.id
-            return redirect(url_for("index"))
-        else:
-            flash("Login Unsuccessful. Please check username and password.", "danger")
-    return render_template('login.html', form=form)
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    form = RegisterForm()
-    if form.validate_on_submit():
-        hashed_password = generate_password_hash(form.password.data, method='sha256')
-        new_user = User(username=form.username.data, password=hashed_password)
-        db.session.add(new_user)
-        db.session.commit()
-        return redirect(url_for('login'))
-    return render_template('register.html', form=form)
-
-@app.route('/logout')
-def logout():
-    session.pop("user_id", None)
-    return redirect(url_for('login'))
+@socketio.on('join')
+def handle_join(data):
+    timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+    user_id = request.sid
+    nickname = data['nickname']
+    
+    if waiting_queue:
+        # Pair the user with the one in the queue
+        partner_id = waiting_queue.popleft()
+        room = f"room_{user_id}_{partner_id}"
+        
+        join_room(room, sid=user_id)
+        join_room(room, sid=partner_id)
+        
+        user_rooms[user_id] = room
+        user_rooms[partner_id] = room
+        
+        emit('join', {'nickname': nickname, 'msg': f'{nickname} joined the chat.', 'timestamp': timestamp, 'room': room}, room=room)
+        emit('join', {'nickname': 'System', 'msg': 'You are now connected to a partner.', 'timestamp': timestamp, 'room': room}, room=room)
+    else:
+        # Add the user to the waiting queue
+        waiting_queue.append(user_id)
+        emit('waiting', {'msg': 'Waiting for a partner to join...', 'timestamp': timestamp}, to=user_id)
 
 @socketio.on('message')
-def handle_message(msg):
-    if "user_id" in session:
-        user_id = session["user_id"]
-        new_message = Message(content=msg, user_id=user_id)
-        db.session.add(new_message)
-        db.session.commit()
-        send(msg, broadcast=True)
+def handle_message(data):
+    room = data['room']
+    new_message = Message(nickname=data['nickname'], content=data['msg'], room=room)
+    db.session.add(new_message)
+    db.session.commit()
+    send({'nickname': data['nickname'], 'msg': data['msg'], 'timestamp': new_message.timestamp.strftime('%Y-%m-%d %H:%M:%S')}, room=room)
+
+@socketio.on('disconnect')
+def handle_disconnect():
+    user_id = request.sid
+    room = user_rooms.pop(user_id, None)
+    
+    if user_id in waiting_queue:
+        waiting_queue.remove(user_id)
+    elif room:
+        timestamp = datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S')
+        emit('message', {'nickname': 'System', 'msg': 'Your partner has disconnected.', 'timestamp': timestamp}, room=room)
+        
+        partner_id = room.replace(f"room_{user_id}_", "").replace(f"_room_{user_id}", "")
+        partner_id = partner_id if partner_id != user_id else None
+
+        if partner_id:
+            waiting_queue.append(partner_id)
+            emit('waiting', {'msg': 'Waiting for a partner to join...', 'timestamp': timestamp}, to=partner_id)
+
+@socketio.on('offer')
+def handle_offer(data):
+    emit('offer', {'offer': data['offer']}, room=data['room'])
+
+@socketio.on('answer')
+def handle_answer(data):
+    emit('answer', {'answer': data['answer']}, room=data['room'])
+
+@socketio.on('ice-candidate')
+def handle_ice_candidate(data):
+    emit('ice-candidate', {'candidate': data['candidate']}, room=data['room'])
 
 if __name__ == '__main__':
     with app.app_context():
